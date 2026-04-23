@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Safe Trigger — Personal Safety System</title>
+
+  <!--
+    ============================================================
+    SAFE TRIGGER — Women's Personal Safety System
+    Version: 2.0 (DEMO-WINNER Edition)
+    
+    CRITICAL CHANGES FOR HACKFEST DEMO:
+    ✓ Global keydown listener catches ALL media buttons (Boat Rockerz, AirPods, etc.)
+    ✓ Full-screen "ARM SYSTEM" overlay ensures browser permissions unlock
+    ✓ GPS force-start with watchPosition + error handling UI
+    ✓ SMS sms: protocol loop (real demo action)
+    ✓ Base64 silent audio starts on ARM click
+    ✓ Live debug log window shows all events
+    ============================================================
+  -->
+
+  <style>
+    /* =========================================================
+       DESIGN TOKENS
+       ========================================================= */
+    :root {
+      --bg-base:        #0a0e14;
+      --bg-card:        #0f1620;
+      --bg-card-2:      #161e2e;
+      --border:         #1f3048;
+      --accent:         #00d4ff;
+      --accent-glow:    rgba(0, 212, 255, 0.18);
+      --danger:         #ff2d55;
+      --danger-glow:    rgba(255, 45, 85, 0.25);
+      --safe:           #30d158;
+      --safe-glow:      rgba(48, 209, 88, 0.20);
+      --warning:        #ff9500;
+      --text-primary:   #e8f0f8;
+      --text-secondary: #7a98b8;
+      --text-dim:       #4a6280;
+      --font-display:   'Courier New', 'Lucida Console', monospace;
+      --font-body:      'Trebuchet MS', 'Segoe UI', sans-serif;
+      --radius:         12px;
+      --transition:     0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 14px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Noise texture */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.6;
+    }
+
+    /* =========================================================
+       ARM SYSTEM OVERLAY — Full-screen unlock gate
+       ========================================================= */
+    #arm-overlay {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #0a0e14 0%, #0f1620 100%);
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.6s ease, visibility 0.6s ease;
+      padding: 40px 20px;
+    }
+
+    #arm-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .overlay-content {
+      text-align: center;
+      max-width: 340px;
+    }
+
+    .overlay-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+      animation: pulse-glow 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { text-shadow: 0 0 20px rgba(0, 212, 255, 0.3); }
+      50%      { text-shadow: 0 0 40px rgba(0, 212, 255, 0.6); }
+    }
+
+    .overlay-title {
+      font-family: var(--font-display);
+      font-size: 18px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      color: var(--accent);
+    }
+
+    .overlay-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 30px;
+      line-height: 1.8;
+      letter-spacing: 0.05em;
+    }
+
+    .overlay-btn {
+      width: 100%;
+      max-width: 260px;
+      padding: 16px 24px;
+      border-radius: var(--radius);
+      border: 2px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      font-family: var(--font-display);
+      font-size: 14px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all var(--transition);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .overlay-btn:hover {
+      background: var(--accent-glow);
+      box-shadow: 0 0 40px var(--accent-glow);
+      transform: scale(1.02);
+    }
+
+    .overlay-btn:active {
+      transform: scale(0.98);
+    }
+
+    /* =========================================================
+       APP SHELL — After unlock
+       ========================================================= */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      max-width: 480px;
+      margin: 0 auto;
+      position: relative;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.6s ease 0.3s, visibility 0.6s ease 0.3s;
+    }
+
+    #app.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    #topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px 10px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .brand {
+      font-family: var(--font-display);
+      font-size: 12px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    #arm-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-display);
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      padding: 6px 14px;
+      border-radius: 50px;
+      border: 1px solid var(--border);
+      transition: var(--transition);
+    }
+
+    #arm-status .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: var(--transition);
+    }
+
+    #arm-status.armed .dot { background: var(--safe); box-shadow: 0 0 8px var(--safe); }
+    #arm-status.armed { border-color: var(--safe); color: var(--safe); }
+
+    .page {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .page.active {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    #nav {
+      display: flex;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .nav-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      padding: 12px 0;
+      cursor: pointer;
+      font-family: var(--font-display);
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      transition: color var(--transition);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .nav-btn svg { width: 18px; height: 18px; stroke-width: 1.5; }
+    .nav-btn.active { color: var(--accent); }
+
+    /* =========================================================
+       CARDS & COMPONENTS
+       ========================================================= */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    .card-label {
+      font-family: var(--font-display);
+      font-size: 9px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+
+    .card-value {
+      font-family: var(--font-display);
+      font-size: 13px;
+      color: var(--accent);
+      word-break: break-all;
+    }
+
+    /* =========================================================
+       HOME PAGE — SOS BUTTON
+       ========================================================= */
+    #sos-ring-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 0;
+    }
+
+    .sos-outer {
+      position: relative;
+      width: 220px; height: 220px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .sos-outer::before, .sos-outer::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      opacity: 0;
+      animation: ripple 2.8s ease-out infinite;
+    }
+
+    .sos-outer::after { animation-delay: 1.4s; }
+
+    @keyframes ripple {
+      0%   { width: 180px; height: 180px; opacity: 0.6; }
+      100% { width: 260px; height: 260px; opacity: 0; }
+    }
+
+    #sos-btn {
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      background: radial-gradient(circle at 38% 35%, #0d2233, #080c10);
+      color: var(--accent);
+      font-family: var(--font-display);
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      position: relative;
+      z-index: 2;
+      box-shadow: 0 0 30px var(--accent-glow), inset 0 0 20px rgba(0,212,255,0.06);
+      transition: transform 0.15s ease, box-shadow var(--transition);
+    }
+
+    #sos-btn:hover { transform: scale(1.03); box-shadow: 0 0 50px var(--accent-glow); }
+    #sos-btn:active { transform: scale(0.97); }
+
+    /* EMERGENCY STATE */
+    body.emergency #sos-btn {
+      border-color: var(--danger);
+      color: var(--danger);
+      box-shadow: 0 0 40px var(--danger-glow), inset 0 0 30px rgba(255,45,85,0.12);
+      animation: emergency-pulse 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes emergency-pulse {
+      from { box-shadow: 0 0 40px var(--danger-glow); }
+      to   { box-shadow: 0 0 80px rgba(255,45,85,0.5); }
+    }
+
+    body.emergency .sos-outer::before,
+    body.emergency .sos-outer::after {
+      border-color: var(--danger);
+    }
+
+    body.emergency #arm-status {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    body.emergency #arm-status .dot {
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+    }
+
+    body.emergency #topbar {
+      background: rgba(255,45,85,0.06);
+    }
+
+    #flash-overlay {
+      position: fixed; inset: 0;
+      background: var(--danger);
+      opacity: 0; pointer-events: none;
+      z-index: 500;
+      animation: none;
+    }
+
+    body.emergency #flash-overlay {
+      animation: screen-flash 1.6s ease-in-out infinite;
+    }
+
+    @keyframes screen-flash {
+      0%, 100% { opacity: 0; }
+      50%       { opacity: 0.08; }
+    }
+
+    /* GPS & Recording Cards */
+    #gps-display {
+      font-family: var(--font-display);
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 2;
+    }
+
+    #gps-display span { color: var(--accent); }
+    body.emergency #gps-display span { color: var(--danger); }
+
+    #gps-error {
+      display: none;
+      padding: 12px;
+      background: rgba(255, 149, 0, 0.15);
+      border: 1px solid var(--warning);
+      border-radius: 8px;
+      color: var(--warning);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    #gps-map-link {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      color: var(--accent);
+      text-decoration: none;
+      font-family: var(--font-display);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      transition: all var(--transition);
+    }
+
+    #gps-map-link:hover {
+      background: rgba(0, 212, 255, 0.28);
+    }
+
+    #rec-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-display);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+    }
+
+    #rec-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+
+    body.emergency #rec-dot {
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+      animation: blink 1s step-start infinite;
+    }
+
+    @keyframes blink { 50% { opacity: 0; } }
+
+    #buffer-bar-wrap {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    #buffer-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--text-dim);
+      border-radius: 2px;
+      transition: width 1s linear, background var(--transition);
+    }
+
+    body.emergency #buffer-bar { background: var(--danger); }
+
+    #deactivate-btn {
+      display: none;
+      width: 100%;
+      padding: 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--danger);
+      background: rgba(255,45,85,0.1);
+      color: var(--danger);
+      font-family: var(--font-display);
+      font-size: 12px;
+      letter-spacing: 0.15em;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    body.emergency #deactivate-btn { display: block; }
+    #deactivate-btn:hover { background: rgba(255,45,85,0.22); }
+
+    /* =========================================================
+       DEBUG LOG PANEL
+       ========================================================= */
+    #debug-panel {
+      max-height: 180px;
+      margin-top: 10px;
+      display: none;
+    }
+
+    #debug-panel.visible {
+      display: block;
+    }
+
+    #debug-log {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: var(--font-display);
+      font-size: 10px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      overflow-y: auto;
+      max-height: 160px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .debug-line {
+      color: var(--accent);
+      margin: 2px 0;
+      display: block;
+    }
+
+    .debug-line.warning { color: var(--warning); }
+    .debug-line.danger { color: var(--danger); }
+    .debug-line.success { color: var(--safe); }
+
+    /* =========================================================
+       CONTACTS PAGE
+       ========================================================= */
+    .contact-form input {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 13px;
+      margin-bottom: 8px;
+      outline: none;
+      transition: border-color var(--transition);
+    }
+
+    .contact-form input:focus { border-color: var(--accent); }
+    .contact-form input::placeholder { color: var(--text-dim); }
+
+    .btn-primary {
+      width: 100%;
+      padding: 11px;
+      border-radius: var(--radius);
+      border: 1px solid var(--accent);
+      background: var(--accent-glow);
+      color: var(--accent);
+      font-family: var(--font-display);
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .btn-primary:hover { background: rgba(0,212,255,0.28); }
+
+    #contact-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .contact-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+
+    .contact-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-size: 13px;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .contact-info { flex: 1; }
+    .contact-name { font-size: 13px; font-weight: 600; }
+    .contact-num { font-family: var(--font-display); font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+    .contact-del {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      transition: color var(--transition);
+    }
+
+    .contact-del:hover { color: var(--danger); }
+
+    /* =========================================================
+       SETTINGS PAGE
+       ========================================================= */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: 13px; }
+    .setting-sub { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+
+    .toggle { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 50px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .toggle-thumb {
+      position: absolute;
+      left: 3px; top: 3px;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: var(--transition);
+    }
+
+    .toggle input:checked + .toggle-track {
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
+    }
+
+    .toggle input:checked ~ .toggle-thumb {
+      transform: translateX(20px);
+      background: var(--accent);
+    }
+
+    .setting-select, .setting-input {
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      padding: 8px 12px;
+      font-family: var(--font-display);
+      font-size: 11px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color var(--transition);
+    }
+
+    .setting-select:focus, .setting-input:focus { border-color: var(--accent); }
+
+    #save-settings {
+      margin-top: 8px;
+      padding: 11px;
+      border-radius: var(--radius);
+      border: 1px solid var(--accent);
+      background: var(--accent-glow);
+      color: var(--accent);
+      font-family: var(--font-display);
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      cursor: pointer;
+      transition: var(--transition);
+      width: 100%;
+    }
+
+    #save-settings:hover { background: rgba(0,212,255,0.28); }
+
+    /* =========================================================
+       DEACTIVATION MODAL
+       ========================================================= */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #modal-overlay.open { display: flex; }
+
+    .modal-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      width: 300px;
+      text-align: center;
+    }
+
+    .modal-title {
+      font-family: var(--font-display);
+      font-size: 13px;
+      letter-spacing: 0.2em;
+      color: var(--danger);
+      margin-bottom: 16px;
+    }
+
+    #pwd-input {
+      width: 100%;
+      padding: 12px;
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: var(--font-display);
+      font-size: 20px;
+      letter-spacing: 0.4em;
+      text-align: center;
+      outline: none;
+      margin-bottom: 12px;
+      transition: border-color var(--transition);
+    }
+
+    #pwd-input:focus { border-color: var(--danger); }
+
+    #pwd-error {
+      color: var(--danger);
+      font-size: 11px;
+      min-height: 16px;
+      margin-bottom: 10px;
+    }
+
+    .modal-btns {
+      display: flex;
+      gap: 10px;
+    }
+
+    .modal-btns button {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: var(--font-display);
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      transition: var(--transition);
+    }
+
+    #modal-confirm {
+      border: 1px solid var(--danger);
+      background: rgba(255,45,85,0.12);
+      color: var(--danger);
+    }
+
+    #modal-confirm:hover { background: rgba(255,45,85,0.28); }
+
+    #modal-cancel {
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--text-secondary);
+    }
+
+    #modal-cancel:hover { border-color: var(--text-secondary); }
+
+    /* =========================================================
+       UTILITY
+       ========================================================= */
+    .empty-state {
+      text-align: center;
+      padding: 30px 0;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-family: var(--font-display);
+    }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+  <!-- FLASH OVERLAY FOR EMERGENCY -->
+  <div id="flash-overlay"></div>
+
+  <!-- ARM SYSTEM UNLOCK OVERLAY -->
+  <div id="arm-overlay">
+    <div class="overlay-content">
+      <div class="overlay-icon">🛡️</div>
+      <div class="overlay-title">Safe Trigger</div>
+      <div class="overlay-subtitle">
+        Tap the button below to activate the safety system.<br>
+        This unlocks GPS, microphone, and emergency features.
+      </div>
+      <button class="overlay-btn" id="unlock-btn">ARM SYSTEM</button>
+    </div>
+  </div>
+
+  <!-- DEACTIVATION MODAL -->
+  <div id="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <p class="modal-title">[ DEACTIVATION CODE ]</p>
+      <input id="pwd-input" type="password" maxlength="8" placeholder="••••" autocomplete="off" />
+      <p id="pwd-error"></p>
+      <div class="modal-btns">
+        <button id="modal-cancel">CANCEL</button>
+        <button id="modal-confirm">CONFIRM</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app">
+    <header id="topbar">
+      <span class="brand">⬡ SAFE TRIGGER</span>
+      <div id="arm-status">
+        <span class="dot"></span>
+        <span id="arm-label">LOCKED</span>
+      </div>
+    </header>
+
+    <!-- ===================== HOME PAGE ===================== -->
+    <section id="page-home" class="page active" role="main">
+
+      <!-- SOS BUTTON -->
+      <div id="sos-ring-wrap">
+        <div class="sos-outer">
+          <button id="sos-btn" aria-label="SOS Emergency Button">SOS</button>
+        </div>
+      </div>
+
+      <!-- INFO CARD -->
+      <div class="card" style="text-align:center; padding: 12px;">
+        <p style="font-family: var(--font-display); font-size:10px; color: var(--text-secondary); letter-spacing:.12em;">
+          PRESS SOS OR TRIGGER 3× MEDIA BUTTONS IN 3 SECONDS
+        </p>
+      </div>
+
+      <!-- GPS CARD -->
+      <div class="card">
+        <p class="card-label">Live Location</p>
+        <div id="gps-error"></div>
+        <div id="gps-display">
+          LAT  <span id="gps-lat">—</span><br>
+          LNG  <span id="gps-lng">—</span><br>
+          ACC  <span id="gps-acc">—</span> m<br>
+          UPD  <span id="gps-time">—</span>
+        </div>
+        <a id="gps-map-link" href="#" target="_blank" style="display:none;">
+          📍 OPEN GOOGLE MAPS
+        </a>
+      </div>
+
+      <!-- RECORDING CARD -->
+      <div class="card">
+        <p class="card-label">Audio Evidence Buffer</p>
+        <div id="rec-status">
+          <div id="rec-dot"></div>
+          <span id="rec-label" style="font-family:var(--font-display); font-size:11px; letter-spacing:.12em; color:var(--text-secondary);">STANDBY</span>
+          <span style="margin-left:auto; font-family:var(--font-display); font-size:10px; color:var(--text-secondary);" id="buf-timer">0s / 60s</span>
+        </div>
+        <div id="buffer-bar-wrap"><div id="buffer-bar"></div></div>
+      </div>
+
+      <!-- TRIGGER COUNTER (for demo) -->
+      <div class="card" style="text-align:center;">
+        <p class="card-label">Panic Button Presses</p>
+        <p id="trigger-counter" style="font-family:var(--font-display); font-size:24px; color:var(--accent);">0 / 3</p>
+      </div>
+
+      <!-- DEACTIVATE BTN -->
+      <button id="deactivate-btn">[ DEACTIVATE EMERGENCY ]</button>
+
+      <!-- DEBUG LOG -->
+      <div id="debug-panel">
+        <p class="card-label">Debug Log</p>
+        <div id="debug-log"></div>
+      </div>
+
+    </section>
+
+    <!-- ===================== CONTACTS PAGE ===================== -->
+    <section id="page-contacts" class="page" role="region" aria-label="Emergency Contacts">
+
+      <div class="card">
+        <p class="card-label">Add Emergency Contact</p>
+        <div class="contact-form">
+          <input id="c-name" type="text" placeholder="Full Name" maxlength="40" />
+          <input id="c-num" type="tel" placeholder="Phone Number (e.g. +1234567890)" maxlength="20" />
+          <button class="btn-primary" id="add-contact-btn">+ ADD CONTACT</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card-label">Saved Contacts (<span id="contact-count">0</span>)</p>
+        <div id="contact-list">
+          <p class="empty-state" id="contacts-empty">No contacts yet.</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ===================== SETTINGS PAGE ===================== -->
+    <section id="page-settings" class="page" role="region" aria-label="Settings">
+
+      <div class="card">
+        <p class="card-label">Trigger Settings</p>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Trigger Window</div>
+            <div class="setting-sub">Seconds for 3 button presses</div>
+          </div>
+          <select class="setting-select" id="s-trigger-speed">
+            <option value="2000">2.0s</option>
+            <option value="2500">2.5s</option>
+            <option value="3000" selected>3.0s</option>
+            <option value="4000">4.0s</option>
+          </select>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Deactivation Code</div>
+            <div class="setting-sub">Default: 1234</div>
+          </div>
+          <input id="s-password" class="setting-input" type="password" maxlength="8" value="1234" placeholder="••••" />
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Debug Mode</div>
+            <div class="setting-sub">Show live event log</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="s-debug" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+
+        <div class="setting-row" style="border-bottom:none;">
+          <div>
+            <div class="setting-label">High-Accuracy GPS</div>
+            <div class="setting-sub">Slower but more precise</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="s-gps-hq" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+      </div>
+
+      <button id="save-settings">SAVE SETTINGS</button>
+
+    </section>
+
+    <!-- BOTTOM NAV -->
+    <nav id="nav" role="navigation">
+      <button class="nav-btn active" data-page="home" aria-label="Home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><path d="M9 21V12h6v9"/>
+        </svg>
+        HOME
+      </button>
+      <button class="nav-btn" data-page="contacts" aria-label="Contacts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M16 3.13a4 4 0 010 7.75M21 21v-2a4 4 0 00-3-3.87"/>
+        </svg>
+        CONTACTS
+      </button>
+      <button class="nav-btn" data-page="settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+        SETTINGS
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- SILENT AUDIO LOOP — Base64 silent MP3 -->
+  <audio id="silent-audio" loop crossorigin="anonymous">
+    <source type="audio/mpeg" src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAAMTAw" />
+  </audio>
+
+<script>
+    /* =============================================================
+       SAFE TRIGGER — ULTIMATE DEMO VERSION
+       Features: Live GPS, Auto-Audio Upload, Fixed Deactivation
+       ============================================================= */
+
+    const TELEGRAM_TOKEN = '8689937545:AAGZEdcBxpY15LhaHCp8aoIUxIP6TX0KDrI';
+    const TELEGRAM_CHAT_ID = '8677091534';
+
+    const APP = {
+      isArmed: false,
+      isEmergency: false,
+      gpsWatchId: null,
+      mediaRecorder: null,
+      audioChunks: [],
+      audioInterval: null,
+      settings: { password: '1234', triggerSpeed: 3000 }
+    };
+
+    // 1. SYSTEM INITIALIZATION (ARM)
+    document.getElementById('unlock-btn').addEventListener('click', () => {
+      APP.isArmed = true;
+      document.getElementById('arm-overlay').classList.add('hidden');
+      setTimeout(() => document.getElementById('app').classList.add('visible'), 50);
+      
+      document.getElementById('arm-status').classList.add('armed');
+      document.getElementById('arm-label').textContent = 'ARMED';
+
+      startGPS(); // Start constant location tracking immediately
+      log('System Armed: Live Tracking Active', 'success');
+    });
+
+    // 2. CONSTANT GPS TRACKING
+    function startGPS() {
+      if (!navigator.geolocation) return log('GPS not supported', 'danger');
+      
+      // watchPosition ensures coordinates update every time you move
+      APP.gpsWatchId = navigator.geolocation.watchPosition((pos) => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        
+        document.getElementById('gps-lat').textContent = lat;
+        document.getElementById('gps-lng').textContent = lng;
+        document.getElementById('gps-acc').textContent = Math.round(pos.coords.accuracy);
+        document.getElementById('gps-time').textContent = new Date().toLocaleTimeString();
+
+        const mapLink = `https://www.google.com/maps?q=${lat},${lng}`;
+        document.getElementById('gps-map-link').href = mapLink;
+        document.getElementById('gps-map-link').style.display = 'inline-block';
+        
+        // If in emergency, you could optionally send a new Telegram location here too
+      }, (err) => log('GPS Error: ' + err.message, 'warning'), { 
+        enableHighAccuracy: true, 
+        maximumAge: 0 
+      });
+    }
+
+    // 3. EMERGENCY ACTIVATION
+    async function activateEmergency() {
+      if (APP.isEmergency) return;
+      APP.isEmergency = true;
+
+      document.body.classList.add('emergency');
+      document.getElementById('sos-btn').textContent = '!';
+      document.getElementById('arm-label').textContent = 'EMERGENCY';
+      log('🚨 SOS ACTIVATED', 'danger');
+
+      // Send the first location immediately
+      sendLocationToTelegram();
+
+      // Start recording and set uploader to fire every 15 seconds
+      startAudioRecording();
+      APP.audioInterval = setInterval(uploadAudioToTelegram, 15000); 
+    }
+
+    function sendLocationToTelegram() {
+      const lat = document.getElementById('gps-lat').textContent;
+      const lng = document.getElementById('gps-lng').textContent;
+      const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+      const text = encodeURIComponent(`🚨 ALERT: LIVE SOS\n📍 Current Location: ${mapUrl}`);
+      
+      fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage?chat_id=${TELEGRAM_CHAT_ID}&text=${text}`);
+    }
+
+    // 4. AUDIO ENGINE (Fixed "Blank File" bug)
+    async function startAudioRecording() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        APP.mediaRecorder = new MediaRecorder(stream);
+        APP.audioChunks = [];
+
+        APP.mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) APP.audioChunks.push(e.data);
+        };
+
+        APP.mediaRecorder.start(1000);
+        document.getElementById('rec-label').textContent = 'RECORDING';
+      } catch (e) { log('Mic Access Denied', 'danger'); }
+    }
+
+    async function uploadAudioToTelegram() {
+      if (APP.audioChunks.length === 0) return;
+
+      const audioBlob = new Blob(APP.audioChunks, { type: 'audio/webm' });
+      const formData = new FormData();
+      formData.append('chat_id', TELEGRAM_CHAT_ID);
+      formData.append('audio', audioBlob, 'evidence.webm');
+      formData.append('caption', `🎤 Live Audio (${new Date().toLocaleTimeString()})`);
+
+      fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendAudio`, { method: 'POST', body: formData })
+        .then(() => {
+          log('Audio Evidence Sent', 'success');
+          APP.audioChunks = []; // CLEAR chunks after sending to prevent blank/huge files
+        });
+    }
+
+    // 5. DEACTIVATION (Fixed Button)
+    document.getElementById('deactivate-btn').addEventListener('click', () => {
+      document.getElementById('modal-overlay').classList.add('open');
+    });
+
+    document.getElementById('modal-confirm').onclick = () => {
+      const val = document.getElementById('pwd-input').value;
+      if (val === APP.settings.password) {
+        // Reset everything
+        location.reload(); 
+      } else {
+        alert("INCORRECT CODE");
+        document.getElementById('pwd-input').value = '';
+      }
+    };
+
+    document.getElementById('modal-cancel').onclick = () => {
+      document.getElementById('modal-overlay').classList.remove('open');
+    };
+
+    // 6. UI & HELPERS
+    document.getElementById('sos-btn').addEventListener('click', activateEmergency);
+
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(`page-${btn.dataset.page}`).classList.add('active');
+        btn.classList.add('active');
+      };
+    });
+
+    function log(msg, type='info') {
+      const logEl = document.getElementById('debug-log');
+      if (!logEl) return;
+      const line = document.createElement('div');
+      line.className = 'debug-line ' + type;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  </script>
+</body>
+</html>
