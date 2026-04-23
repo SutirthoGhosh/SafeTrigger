@@ -884,60 +884,52 @@
 
    
     <!-- ===================== SETTINGS PAGE ===================== -->
-    <section id="page-settings" class="page" role="region" aria-label="Settings">
+   V<section id="page-settings" class="page" role="region" aria-label="Settings">
 
-      <div class="card">
-        <p class="card-label">Trigger Settings</p>
-
-        <div class="setting-row">
-          <div>
-            <div class="setting-label">Trigger Window</div>
-            <div class="setting-sub">Seconds for 3 button presses</div>
-          </div>
-          <select class="setting-select" id="s-trigger-speed">
-            <option value="2000">2.0s</option>
-            <option value="2500">2.5s</option>
-            <option value="3000" selected>3.0s</option>
-            <option value="4000">4.0s</option>
-          </select>
-        </div>
-
-        <div class="setting-row">
-          <div>
-            <div class="setting-label">Deactivation Code</div>
-            <div class="setting-sub">Default: 1234</div>
-          </div>
-          <input id="s-password" class="setting-input" type="password" maxlength="8" value="1234" placeholder="••••" />
-        </div>
-
-        <div class="setting-row">
-          <div>
-            <div class="setting-label">Debug Mode</div>
-            <div class="setting-sub">Show live event log</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="s-debug" checked>
-            <div class="toggle-track"></div>
-            <div class="toggle-thumb"></div>
-          </label>
-        </div>
-
-        <div class="setting-row" style="border-bottom:none;">
-          <div>
-            <div class="setting-label">High-Accuracy GPS</div>
-            <div class="setting-sub">Slower but more precise</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="s-gps-hq" checked>
-            <div class="toggle-track"></div>
-            <div class="toggle-thumb"></div>
-          </label>
-        </div>
+  <div class="card">
+    <p class="card-label">Telegram Configuration</p>
+    
+    <div class="setting-row">
+      <div style="width: 100%;">
+        <div class="setting-label">Bot Token</div>
+        <input id="s-token" class="setting-input" type="password" style="width: 100%; margin-top:8px;" placeholder="Paste Bot Token here...">
       </div>
+    </div>
 
-      <button id="save-settings">SAVE SETTINGS</button>
+    <div class="setting-row">
+      <div style="width: 100%;">
+        <div class="setting-label">Chat ID</div>
+        <input id="s-chatid" class="setting-input" type="text" style="width: 100%; margin-top:8px;" placeholder="Your Chat ID...">
+      </div>
+    </div>
+  </div>
 
-    </section>
+  <div class="card">
+    <p class="card-label">Trigger & Security</p>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Deactivation Code</div>
+        <div class="setting-sub">Default: 1234</div>
+      </div>
+      <input id="s-password" class="setting-input" type="password" maxlength="8" value="1234">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Debug Mode</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="s-debug" checked>
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+  </div>
+
+  <button id="save-settings">SAVE & UPDATE SYSTEM</button>
+
+</section>
 
     <!-- BOTTOM NAV -->
     <nav id="nav" role="navigation">
