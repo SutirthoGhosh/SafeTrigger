@@ -990,12 +990,12 @@
 
 <script>
     /* =============================================================
-       SAFE TRIGGER — ULTIMATE DEMO VERSION
-       Features: Live GPS, Auto-Audio Upload, Fixed Deactivation
+       SAFE TRIGGER — UNIVERSAL VERSION (GitHub Ready)
        ============================================================= */
 
-    const TELEGRAM_TOKEN = '8689937545:AAGZEdcBxpY15LhaHCp8aoIUxIP6TX0KDrI';
-    const TELEGRAM_CHAT_ID = '8677091534';
+    // Load user settings from browser memory, or stay null to trigger prompt
+    let TELEGRAM_TOKEN = localStorage.getItem('st_token');
+    let TELEGRAM_CHAT_ID = localStorage.getItem('st_chatid');
 
     const APP = {
       isArmed: false,
@@ -1003,11 +1003,32 @@
       gpsWatchId: null,
       mediaRecorder: null,
       audioChunks: [],
-      audioInterval: null,
-      settings: { password: '1234', triggerSpeed: 3000 }
+      settings: { password: '1234' }
     };
 
-    // 1. SYSTEM INITIALIZATION (ARM)
+    // 1. SETUP CHECK (Runs when page loads)
+    window.onload = () => {
+        if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
+            showSetupPrompt();
+        }
+    };
+
+    function showSetupPrompt() {
+        const token = prompt("ENTER TELEGRAM BOT TOKEN:");
+        const chatid = prompt("ENTER TELEGRAM CHAT ID:");
+        
+        if (token && chatid) {
+            localStorage.setItem('st_token', token);
+            localStorage.setItem('st_chatid', chatid);
+            TELEGRAM_TOKEN = token;
+            TELEGRAM_CHAT_ID = chatid;
+            alert("Settings saved! Your bot is now connected.");
+        } else {
+            alert("Warning: SOS features won't work without Bot settings.");
+        }
+    }
+
+    // 2. SYSTEM ARMING & CONSTANT GPS
     document.getElementById('unlock-btn').addEventListener('click', () => {
       APP.isArmed = true;
       document.getElementById('arm-overlay').classList.add('hidden');
@@ -1016,117 +1037,92 @@
       document.getElementById('arm-status').classList.add('armed');
       document.getElementById('arm-label').textContent = 'ARMED';
 
-      startGPS(); // Start constant location tracking immediately
-      log('System Armed: Live Tracking Active', 'success');
+      startGPS(); // Starts LIVE tracking
+      log('System Armed & Live Tracking Active', 'success');
     });
 
-    // 2. CONSTANT GPS TRACKING
     function startGPS() {
-      if (!navigator.geolocation) return log('GPS not supported', 'danger');
+      if (!navigator.geolocation) return;
       
-      // watchPosition ensures coordinates update every time you move
+      // watchPosition keeps location updated CONSTANTLY
       APP.gpsWatchId = navigator.geolocation.watchPosition((pos) => {
         const lat = pos.coords.latitude.toFixed(6);
         const lng = pos.coords.longitude.toFixed(6);
         
         document.getElementById('gps-lat').textContent = lat;
         document.getElementById('gps-lng').textContent = lng;
-        document.getElementById('gps-acc').textContent = Math.round(pos.coords.accuracy);
-        document.getElementById('gps-time').textContent = new Date().toLocaleTimeString();
 
-        const mapLink = `https://www.google.com/maps?q=${lat},${lng}`;
-        document.getElementById('gps-map-link').href = mapLink;
-        document.getElementById('gps-map-link').style.display = 'inline-block';
-        
-        // If in emergency, you could optionally send a new Telegram location here too
-      }, (err) => log('GPS Error: ' + err.message, 'warning'), { 
-        enableHighAccuracy: true, 
-        maximumAge: 0 
-      });
+        // If emergency is active, send a location update every 30 seconds
+        if (APP.isEmergency && (!APP.lastUpdate || Date.now() - APP.lastUpdate > 30000)) {
+            sendUpdateToTelegram(lat, lng);
+            APP.lastUpdate = Date.now();
+        }
+      }, null, { enableHighAccuracy: true });
     }
 
-    // 3. EMERGENCY ACTIVATION
+    // 3. EMERGENCY TRIGGER
     async function activateEmergency() {
       if (APP.isEmergency) return;
       APP.isEmergency = true;
 
       document.body.classList.add('emergency');
       document.getElementById('sos-btn').textContent = '!';
-      document.getElementById('arm-label').textContent = 'EMERGENCY';
       log('🚨 SOS ACTIVATED', 'danger');
 
-      // Send the first location immediately
-      sendLocationToTelegram();
+      // Initial Alert
+      sendUpdateToTelegram(document.getElementById('gps-lat').textContent, document.getElementById('gps-lng').textContent);
 
-      // Start recording and set uploader to fire every 15 seconds
+      // Start Audio & Auto-Upload every 15s
       startAudioRecording();
-      APP.audioInterval = setInterval(uploadAudioToTelegram, 15000); 
+      setInterval(uploadAudioToTelegram, 15000);
     }
 
-    function sendLocationToTelegram() {
-      const lat = document.getElementById('gps-lat').textContent;
-      const lng = document.getElementById('gps-lng').textContent;
-      const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-      const text = encodeURIComponent(`🚨 ALERT: LIVE SOS\n📍 Current Location: ${mapUrl}`);
-      
-      fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage?chat_id=${TELEGRAM_CHAT_ID}&text=${text}`);
+    async function sendUpdateToTelegram(lat, lng) {
+        if (!TELEGRAM_TOKEN) return;
+        const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const text = encodeURIComponent(`📍 LIVE LOCATION UPDATE:\n${mapUrl}`);
+        fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage?chat_id=${TELEGRAM_CHAT_ID}&text=${text}`);
     }
 
-    // 4. AUDIO ENGINE (Fixed "Blank File" bug)
+    // 4. AUDIO ENGINE (Real files, no blanks)
     async function startAudioRecording() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         APP.mediaRecorder = new MediaRecorder(stream);
         APP.audioChunks = [];
-
-        APP.mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) APP.audioChunks.push(e.data);
-        };
-
+        APP.mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) APP.audioChunks.push(e.data); };
         APP.mediaRecorder.start(1000);
-        document.getElementById('rec-label').textContent = 'RECORDING';
       } catch (e) { log('Mic Access Denied', 'danger'); }
     }
 
     async function uploadAudioToTelegram() {
       if (APP.audioChunks.length === 0) return;
-
       const audioBlob = new Blob(APP.audioChunks, { type: 'audio/webm' });
       const formData = new FormData();
       formData.append('chat_id', TELEGRAM_CHAT_ID);
       formData.append('audio', audioBlob, 'evidence.webm');
-      formData.append('caption', `🎤 Live Audio (${new Date().toLocaleTimeString()})`);
 
       fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendAudio`, { method: 'POST', body: formData })
         .then(() => {
-          log('Audio Evidence Sent', 'success');
-          APP.audioChunks = []; // CLEAR chunks after sending to prevent blank/huge files
+          APP.audioChunks = []; // Clear to prevent blank files
+          log('Audio Clip Sent', 'success');
         });
     }
 
-    // 5. DEACTIVATION (Fixed Button)
+    // 5. FIXED DEACTIVATE BUTTON
     document.getElementById('deactivate-btn').addEventListener('click', () => {
-      document.getElementById('modal-overlay').classList.add('open');
+      const pass = prompt("Enter Deactivation Password:");
+      if (pass === APP.settings.password) {
+          window.location.reload(); // Instantly stops everything and resets
+      } else {
+          alert("Wrong Code");
+      }
     });
 
-    document.getElementById('modal-confirm').onclick = () => {
-      const val = document.getElementById('pwd-input').value;
-      if (val === APP.settings.password) {
-        // Reset everything
-        location.reload(); 
-      } else {
-        alert("INCORRECT CODE");
-        document.getElementById('pwd-input').value = '';
-      }
-    };
-
-    document.getElementById('modal-cancel').onclick = () => {
-      document.getElementById('modal-overlay').classList.remove('open');
-    };
-
-    // 6. UI & HELPERS
+    // CONNECT BUTTONS
     document.getElementById('sos-btn').addEventListener('click', activateEmergency);
-
+    
+    // UI TABS
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.onclick = () => {
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -1138,12 +1134,10 @@
 
     function log(msg, type='info') {
       const logEl = document.getElementById('debug-log');
-      if (!logEl) return;
-      const line = document.createElement('div');
-      line.className = 'debug-line ' + type;
-      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-      logEl.appendChild(line);
-      logEl.scrollTop = logEl.scrollHeight;
+      if (logEl) {
+          logEl.innerHTML += `<div class="${type}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+          logEl.scrollTop = logEl.scrollHeight;
+      }
     }
   </script>
 </body>
