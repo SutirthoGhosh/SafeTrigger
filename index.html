@@ -978,59 +978,53 @@
       settings: { password: '1234' }
     };
 
-    // 1. SETUP CHECK (Runs when page loads)
-    window.onload = () => {
-        if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
-            showSetupPrompt();
-        }
-    };
+   // 1. IMPROVED INITIALIZATION (This runs immediately)
+window.onload = () => {
+    // Force pull from storage
+    TELEGRAM_TOKEN = localStorage.getItem('st_token') || "";
+    TELEGRAM_CHAT_ID = localStorage.getItem('st_chatid') || "";
+    APP.settings.password = localStorage.getItem('st_pwd') || '1234';
 
-    function showSetupPrompt() {
-        const token = prompt("ENTER TELEGRAM BOT TOKEN:");
-        const chatid = prompt("ENTER TELEGRAM CHAT ID:");
-        
-        if (token && chatid) {
-            localStorage.setItem('st_token', token);
-            localStorage.setItem('st_chatid', chatid);
-            TELEGRAM_TOKEN = token;
-            TELEGRAM_CHAT_ID = chatid;
-            alert("Settings saved! Your bot is now connected.");
-        } else {
-            alert("Warning: SOS features won't work without Bot settings.");
-        }
-    }
+    // Update the UI inputs so you can SEE they are saved
+    const tokenInput = document.getElementById('s-token');
+    const chatIdInput = document.getElementById('s-chatid');
+    const pwdInput = document.getElementById('s-password');
 
-    // 2. SYSTEM ARMING & CONSTANT GPS
-    document.getElementById('unlock-btn').addEventListener('click', () => {
-      APP.isArmed = true;
-      document.getElementById('arm-overlay').classList.add('hidden');
-      setTimeout(() => document.getElementById('app').classList.add('visible'), 50);
-      
-      document.getElementById('arm-status').classList.add('armed');
-      document.getElementById('arm-label').textContent = 'ARMED';
+    if(tokenInput) tokenInput.value = TELEGRAM_TOKEN;
+    if(chatIdInput) chatIdInput.value = TELEGRAM_CHAT_ID;
+    if(pwdInput) pwdInput.value = APP.settings.password;
 
-      startGPS(); // Starts LIVE tracking
-      log('System Armed & Live Tracking Active', 'success');
-    });
+    log("Settings Restored from Memory", "success");
+};
 
-    function startGPS() {
-      if (!navigator.geolocation) return;
-      
-      // watchPosition keeps location updated CONSTANTLY
-      APP.gpsWatchId = navigator.geolocation.watchPosition((pos) => {
-        const lat = pos.coords.latitude.toFixed(6);
-        const lng = pos.coords.longitude.toFixed(6);
-        
-        document.getElementById('gps-lat').textContent = lat;
-        document.getElementById('gps-lng').textContent = lng;
+// 2. STRENGTHENED SAVE LOGIC
+document.getElementById('save-settings').addEventListener('click', () => {
+    const newToken = document.getElementById('s-token').value.trim();
+    const newChatId = document.getElementById('s-chatid').value.trim();
+    const newPwd = document.getElementById('s-password').value.trim();
 
-        // If emergency is active, send a location update every 30 seconds
-        if (APP.isEmergency && (!APP.lastUpdate || Date.now() - APP.lastUpdate > 30000)) {
-            sendUpdateToTelegram(lat, lng);
-            APP.lastUpdate = Date.now();
-        }
-      }, null, { enableHighAccuracy: true });
-    }
+    // CRITICAL: Save to localStorage FIRST
+    localStorage.setItem('st_token', newToken);
+    localStorage.setItem('st_chatid', newChatId);
+    localStorage.setItem('st_pwd', newPwd);
+
+    // Then update the active app variables
+    TELEGRAM_TOKEN = newToken;
+    TELEGRAM_CHAT_ID = newChatId;
+    APP.settings.password = newPwd;
+
+    // Visual feedback
+    const btn = document.getElementById('save-settings');
+    btn.textContent = "✅ SAVED TO DISK";
+    btn.style.backgroundColor = "rgba(48, 209, 88, 0.2)";
+    
+    setTimeout(() => {
+        btn.textContent = "SAVE & UPDATE SYSTEM";
+        btn.style.backgroundColor = "var(--accent-glow)";
+    }, 2000);
+
+    log("Storage Updated Successfully", "success");
+});
 
     // 3. EMERGENCY TRIGGER
     async function activateEmergency() {
