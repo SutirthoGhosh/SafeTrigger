@@ -1113,6 +1113,27 @@ document.getElementById('sos-btn').addEventListener('click', () => {
     
     // Telegram Alert Logic (Previous fetch code goes here)
 });
+  // Add this inside your DOMContentLoaded listener or at the bottom of the script
+document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const pageId = btn.getAttribute('data-page');
+        
+        // 1. Update Active Button UI
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // 2. Switch Visible Page
+        document.querySelectorAll('.page').forEach(page => {
+            page.classList.remove('active');
+        });
+        
+        const targetPage = document.getElementById('page-' + pageId);
+        if (targetPage) {
+            targetPage.classList.add('active');
+            log(`Switched to ${pageId} view`, 'success');
+        }
+    });
+});
   </script>
 </body>
 </html>
