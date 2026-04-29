@@ -962,33 +962,27 @@
 
 <script>
 /* =============================================================
-   SAFE TRIGGER — OMNI-VERSION (PERSISTENT & SECURE)
+   SAFE TRIGGER — FINAL STABLE VERSION
    ============================================================= */
 
-// 1. GLOBAL STATE
 let TELEGRAM_TOKEN = localStorage.getItem('st_token') || "";
 let TELEGRAM_CHAT_ID = localStorage.getItem('st_chatid') || "";
 
 const APP = {
     isArmed: false,
     isEmergency: false,
-    sosTimer: null, // For the 3-second hold
-    settings: { 
-        password: localStorage.getItem('st_pwd') || '1234' 
-    }
+    sosTimer: null,
+    settings: { password: localStorage.getItem('st_pwd') || '1234' }
 };
 
-// 2. INITIALIZATION
+// INITIALIZATION
 window.addEventListener('DOMContentLoaded', () => {
-    // Restore UI Values
     document.getElementById('s-token').value = TELEGRAM_TOKEN;
     document.getElementById('s-chatid').value = TELEGRAM_CHAT_ID;
     document.getElementById('s-password').value = APP.settings.password;
 
-    // Navigation Logic
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            // BLOCK SETTINGS IF SOS IS ACTIVE
             if (APP.isEmergency && btn.getAttribute('data-page') === 'settings') {
                 alert("Settings locked during active emergency!");
                 return;
@@ -996,134 +990,110 @@ window.addEventListener('DOMContentLoaded', () => {
             switchPage(btn.getAttribute('data-page'));
         });
     });
-
-    log("System Initialized", "success");
 });
 
 function switchPage(pageId) {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.querySelector(`[data-page="${pageId}"]`).classList.add('active');
+    const activeBtn = document.querySelector(`[data-page="${pageId}"]`);
+    if(activeBtn) activeBtn.classList.add('active');
+    
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-' + pageId).classList.add('active');
 }
 
-// 3. ARMING SYSTEM
+// ARMING
 document.getElementById('unlock-btn').addEventListener('click', () => {
     APP.isArmed = true;
     document.getElementById('arm-overlay').classList.add('hidden');
     document.getElementById('app').classList.add('visible');
     document.getElementById('arm-status').classList.add('armed');
     document.getElementById('arm-label').textContent = 'ARMED';
-    log("Sensors Active & Armed", "success");
+    log("System Armed", "success");
 });
 
-// 4. SOS LONG-PRESS LOGIC (3 SECONDS)
+// SOS LONG-PRESS (3s)
 const sosBtn = document.getElementById('sos-btn');
 
-const startSosTimer = () => {
+sosBtn.addEventListener('mousedown', () => {
     if (APP.isEmergency) return;
-    sosBtn.style.transform = "scale(0.9)";
-    log("Hold for 3s to trigger SOS...", "warning");
-    
-    APP.sosTimer = setTimeout(() => {
-        triggerEmergency();
-    }, 3000); // 3000ms = 3 seconds
-};
+    sosBtn.style.background = "var(--danger)";
+    APP.sosTimer = setTimeout(triggerEmergency, 3000);
+});
 
-const cancelSosTimer = () => {
-    sosBtn.style.transform = "scale(1)";
+sosBtn.addEventListener('mouseup', () => {
+    if(!APP.isEmergency) sosBtn.style.background = "";
     clearTimeout(APP.sosTimer);
-};
+});
 
-// Listeners for both Mouse and Touch
-sosBtn.addEventListener('mousedown', startSosTimer);
-sosBtn.addEventListener('mouseup', cancelSosTimer);
-sosBtn.addEventListener('touchstart', startSosTimer);
-sosBtn.addEventListener('touchend', cancelSosTimer);
-
-// 5. THE EMERGENCY CORE
-async function triggerEmergency() {
-    APP.isEmergency = true;
-    document.body.classList.add('emergency');
-    switchPage('home'); // Force stay on home page
-    
-    log("🚨 EMERGENCY ACTIVATED", "danger");
-
-    const lat = document.getElementById('gps-lat').textContent || "0.00";
-    const lng = document.getElementById('gps-lng').textContent || "0.00";
-    const mapLink = `https://www.google.com/maps?q=${lat},${lng}`;
-
-    const text = `🚨 <b>SAFE TRIGGER ALERT!</b>\n\n<b>User:</b> ${"Mummum"}'s Child\n<b>Location:</b> <a href="${mapLink}">📍 View on Maps</a>`;
-    
-    await sendToTelegram(text);
-}
-
+// TELEGRAM SENDER
 async function sendToTelegram(text) {
-    if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+    if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
+        log("Error: No Token/ID saved!", "danger");
+        return;
+    }
     const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
     try {
-        await fetch(url, {
+        const res = await fetch(url, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: text, parse_mode: 'HTML' })
         });
-        log("Telegram alert dispatched", "success");
+        const data = await res.json();
+        if(data.ok) log("Telegram Notified!", "success");
+        else log("Telegram API Error: " + data.description, "danger");
     } catch (e) {
-        log("Telegram Failed", "danger");
+        log("Network Error: Check Internet", "danger");
     }
 }
 
-// 6. DEACTIVATION LOGIC
+// EMERGENCY CORE
+async function triggerEmergency() {
+    APP.isEmergency = true;
+    document.body.classList.add('emergency');
+    switchPage('home'); 
+    
+    const lat = document.getElementById('gps-lat').textContent;
+    const lng = document.getElementById('gps-lng').textContent;
+    const mapLink = `https://www.google.com/maps?q=${lat},${lng}`;
+
+    const text = `🚨 <b>SAFE TRIGGER ALERT!</b>\n\n<b>User:</b> Child of Mummum\n<b>Location:</b> <a href="${mapLink}">📍 Click to Track</a>`;
+    
+    await sendToTelegram(text);
+}
+
+// DEACTIVATION
 document.getElementById('deactivate-btn').addEventListener('click', () => {
-    const code = prompt("Enter Deactivation PIN:");
+    const code = prompt("ENTER PIN TO STOP SOS:");
     if (code === APP.settings.password) {
         APP.isEmergency = false;
         document.body.classList.remove('emergency');
-        sendToTelegram("✅ <b>SAFE:</b> System Deactivated via PIN.");
-        log("System Disarmed", "success");
+        sendToTelegram("✅ <b>SYSTEM DEACTIVATED:</b> User is safe.");
+        log("Emergency Terminated", "success");
     } else {
-        alert("WRONG PIN! SOS STILL ACTIVE.");
+        alert("INCORRECT PIN!");
     }
 });
 
-// 7. PERSISTENT SAVING
+// SETTINGS SAVE
 document.getElementById('save-settings').addEventListener('click', () => {
-    TELEGRAM_TOKEN = document.getElementById('s-token').value;
-    TELEGRAM_CHAT_ID = document.getElementById('s-chatid').value;
-    APP.settings.password = document.getElementById('s-password').value;
+    TELEGRAM_TOKEN = document.getElementById('s-token').value.trim();
+    TELEGRAM_CHAT_ID = document.getElementById('s-chatid').value.trim();
+    APP.settings.password = document.getElementById('s-password').value.trim();
 
     localStorage.setItem('st_token', TELEGRAM_TOKEN);
     localStorage.setItem('st_chatid', TELEGRAM_CHAT_ID);
     localStorage.setItem('st_pwd', APP.settings.password);
 
-    log("Settings Saved Permanently", "success");
+    log("Settings Saved & Linked", "success");
 });
 
 function log(m, t) {
     const l = document.getElementById('debug-log');
+    if(!l) return;
     const d = document.createElement('div');
     d.className = `debug-line ${t}`;
     d.innerHTML = `<span>[${new Date().toLocaleTimeString()}]</span> ${m}`;
     l.prepend(d);
-}
-  // Add this inside your triggerEmergency function
-async function triggerEmergency() {
-    // ... your existing code ...
-
-    // KEEP SCREEN AWAKE
-    if ('wakeLock' in navigator) {
-        try {
-            const wakeLock = await navigator.wakeLock.request('screen');
-            log("Security WakeLock Active", "success");
-        } catch (err) {
-            console.log("WakeLock failed");
-        }
-    }
-
-    // DISGUISE MODE
-    // Lower brightness/Opacity to make the phone look "Off" or "Dead"
-    document.getElementById('app').style.filter = "brightness(0.1)"; 
-    log("Stealth Mode Engaged", "warning");
 }
   </script>
 </body>
