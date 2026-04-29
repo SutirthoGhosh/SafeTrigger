@@ -965,6 +965,11 @@
    SAFE TRIGGER — FINAL COMPETITION VERSION
    ============================================================= */
 
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+        .then(() => console.log("Background Service Active"))
+        .catch(() => console.log("Service Worker Failed"));
+}
 let TELEGRAM_TOKEN = localStorage.getItem('st_token') || "";
 let TELEGRAM_CHAT_ID = localStorage.getItem('st_chatid') || "";
 let USER_NAME = localStorage.getItem('st_username') || "Primary User";
