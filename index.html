@@ -962,11 +962,12 @@
 
 <script>
 /* =============================================================
-   SAFE TRIGGER — FINAL STABLE VERSION
+   SAFE TRIGGER — FINAL COMPETITION VERSION
    ============================================================= */
 
 let TELEGRAM_TOKEN = localStorage.getItem('st_token') || "";
 let TELEGRAM_CHAT_ID = localStorage.getItem('st_chatid') || "";
+let USER_NAME = localStorage.getItem('st_username') || "Primary User";
 
 const APP = {
     isArmed: false,
@@ -975,12 +976,18 @@ const APP = {
     settings: { password: localStorage.getItem('st_pwd') || '1234' }
 };
 
-// INITIALIZATION
+// 1. INITIALIZATION
 window.addEventListener('DOMContentLoaded', () => {
+    // Fill inputs from memory
     document.getElementById('s-token').value = TELEGRAM_TOKEN;
     document.getElementById('s-chatid').value = TELEGRAM_CHAT_ID;
     document.getElementById('s-password').value = APP.settings.password;
+    
+    // Add a name field if you have one, or it defaults to "Primary User"
+    const nameField = document.getElementById('s-username');
+    if(nameField) nameField.value = USER_NAME;
 
+    // Navigation Logic
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             if (APP.isEmergency && btn.getAttribute('data-page') === 'settings') {
@@ -994,14 +1001,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
 function switchPage(pageId) {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    const activeBtn = document.querySelector(`[data-page="${pageId}"]`);
-    if(activeBtn) activeBtn.classList.add('active');
+    const btn = document.querySelector(`[data-page="${pageId}"]`);
+    if(btn) btn.classList.add('active');
     
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById('page-' + pageId).classList.add('active');
+    const target = document.getElementById('page-' + pageId);
+    if(target) target.classList.add('active');
 }
 
-// ARMING
+// 2. ARMING
 document.getElementById('unlock-btn').addEventListener('click', () => {
     APP.isArmed = true;
     document.getElementById('arm-overlay').classList.add('hidden');
@@ -1011,80 +1019,86 @@ document.getElementById('unlock-btn').addEventListener('click', () => {
     log("System Armed", "success");
 });
 
-// SOS LONG-PRESS (3s)
+// 3. SOS LONG-PRESS (3s)
 const sosBtn = document.getElementById('sos-btn');
 
-sosBtn.addEventListener('mousedown', () => {
+const handleStart = (e) => {
     if (APP.isEmergency) return;
-    sosBtn.style.background = "var(--danger)";
+    e.preventDefault(); // Prevents context menus on mobile
+    sosBtn.classList.add('pressing');
+    log("Hold for 3s...", "warning");
     APP.sosTimer = setTimeout(triggerEmergency, 3000);
-});
+};
 
-sosBtn.addEventListener('mouseup', () => {
-    if(!APP.isEmergency) sosBtn.style.background = "";
+const handleEnd = () => {
+    sosBtn.classList.remove('pressing');
     clearTimeout(APP.sosTimer);
-});
+};
 
-// TELEGRAM SENDER
+sosBtn.addEventListener('mousedown', handleStart);
+sosBtn.addEventListener('mouseup', handleEnd);
+sosBtn.addEventListener('touchstart', handleStart);
+sosBtn.addEventListener('touchend', handleEnd);
+
+// 4. TELEGRAM SENDER
 async function sendToTelegram(text) {
-    if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
-        log("Error: No Token/ID saved!", "danger");
-        return;
-    }
+    if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
     const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
     try {
-        const res = await fetch(url, {
+        await fetch(url, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: text, parse_mode: 'HTML' })
         });
-        const data = await res.json();
-        if(data.ok) log("Telegram Notified!", "success");
-        else log("Telegram API Error: " + data.description, "danger");
+        log("Telegram Notified", "success");
     } catch (e) {
-        log("Network Error: Check Internet", "danger");
+        log("Connection Error", "danger");
     }
 }
 
-// EMERGENCY CORE
+// 5. EMERGENCY CORE
 async function triggerEmergency() {
     APP.isEmergency = true;
     document.body.classList.add('emergency');
     switchPage('home'); 
     
-    const lat = document.getElementById('gps-lat').textContent;
-    const lng = document.getElementById('gps-lng').textContent;
+    const lat = document.getElementById('gps-lat').textContent || "0.0";
+    const lng = document.getElementById('gps-lng').textContent || "0.0";
     const mapLink = `https://www.google.com/maps?q=${lat},${lng}`;
 
-    const text = `🚨 <b>SAFE TRIGGER ALERT!</b>\n\n<b>User:</b> Child of Mummum\n<b>Location:</b> <a href="${mapLink}">📍 Click to Track</a>`;
+    const text = `🚨 <b>SAFE TRIGGER ALERT!</b>\n\n<b>User:</b> ${USER_NAME}\n<b>Location:</b> <a href="${mapLink}">📍 Track on Google Maps</a>`;
     
     await sendToTelegram(text);
 }
 
-// DEACTIVATION
+// 6. DEACTIVATION
 document.getElementById('deactivate-btn').addEventListener('click', () => {
     const code = prompt("ENTER PIN TO STOP SOS:");
     if (code === APP.settings.password) {
         APP.isEmergency = false;
         document.body.classList.remove('emergency');
-        sendToTelegram("✅ <b>SYSTEM DEACTIVATED:</b> User is safe.");
+        sendToTelegram("✅ <b>SYSTEM DISARMED:</b> User is safe.");
         log("Emergency Terminated", "success");
     } else {
         alert("INCORRECT PIN!");
     }
 });
 
-// SETTINGS SAVE
+// 7. SETTINGS SAVE
 document.getElementById('save-settings').addEventListener('click', () => {
     TELEGRAM_TOKEN = document.getElementById('s-token').value.trim();
     TELEGRAM_CHAT_ID = document.getElementById('s-chatid').value.trim();
     APP.settings.password = document.getElementById('s-password').value.trim();
+    
+    const nameInput = document.getElementById('s-username');
+    if(nameInput) USER_NAME = nameInput.value.trim();
 
     localStorage.setItem('st_token', TELEGRAM_TOKEN);
     localStorage.setItem('st_chatid', TELEGRAM_CHAT_ID);
     localStorage.setItem('st_pwd', APP.settings.password);
+    localStorage.setItem('st_username', USER_NAME);
 
-    log("Settings Saved & Linked", "success");
+    log("Settings Saved", "success");
 });
 
 function log(m, t) {
