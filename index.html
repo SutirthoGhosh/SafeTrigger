@@ -1134,6 +1134,50 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
         }
     });
 });
+  async function sendTelegramMessage(text) {
+    if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+
+    const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+    const payload = {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: text,
+        parse_mode: "HTML"
+    };
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        if (data.ok) {
+            log("Telegram Alert Sent!", "success");
+        } else {
+            log("Telegram Error: " + data.description, "danger");
+        }
+    } catch (err) {
+        log("Network Error: Could not reach Telegram", "danger");
+    }
+}
+
+// Update your SOS button click to call this:
+document.getElementById('sos-btn').addEventListener('click', () => {
+    if (APP.isEmergency) return;
+    
+    APP.isEmergency = true;
+    document.body.classList.add('emergency');
+    
+    const lat = document.getElementById('gps-lat').textContent;
+    const lng = document.getElementById('gps-lng').textContent;
+    const mapLink = `https://www.google.com/maps?q=${lat},${lng}`;
+    
+    const alertText = `🚨 <b>SAFE TRIGGER ALERT!</b>\n\n<b>Location:</b>\n<pre>${lat}, ${lng}</pre>\n\n<a href="${mapLink}">📍 VIEW LIVE LOCATION</a>`;
+    
+    sendTelegramMessage(alertText);
+    log("SOS INITIATED", "danger");
+});
   </script>
 </body>
 </html>
