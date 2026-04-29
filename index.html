@@ -1106,6 +1106,25 @@ function log(m, t) {
     d.innerHTML = `<span>[${new Date().toLocaleTimeString()}]</span> ${m}`;
     l.prepend(d);
 }
+  // Add this inside your triggerEmergency function
+async function triggerEmergency() {
+    // ... your existing code ...
+
+    // KEEP SCREEN AWAKE
+    if ('wakeLock' in navigator) {
+        try {
+            const wakeLock = await navigator.wakeLock.request('screen');
+            log("Security WakeLock Active", "success");
+        } catch (err) {
+            console.log("WakeLock failed");
+        }
+    }
+
+    // DISGUISE MODE
+    // Lower brightness/Opacity to make the phone look "Off" or "Dead"
+    document.getElementById('app').style.filter = "brightness(0.1)"; 
+    log("Stealth Mode Engaged", "warning");
+}
   </script>
 </body>
 </html>
